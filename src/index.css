@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+:root {
+  --bg-main: #020617;
+  --bg-card: #0f172a;
+  --bg-card-hover: #1e293b;
+  --accent-primary: #3b82f6;
+  --accent-secondary: #6366f1;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --border-color: rgba(51, 65, 85, 0.5);
+}
+
+* {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+  background-image: radial-gradient(1200px 600px at 20% 0%, rgba(59, 130, 246, 0.10), transparent 55%), radial-gradient(900px 500px at 85% 20%, rgba(99, 102, 241, 0.10), transparent 60%);
+}
+
+.glass-card {
+  background: rgba(15, 23, 42, 0.86);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(51, 65, 85, 0.75);
+  box-shadow: 0 20px 35px rgba(0, 0, 0, 0.35);
+}
+
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.15);
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
