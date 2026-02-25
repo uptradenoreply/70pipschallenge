@@ -144,6 +144,7 @@ export default function App() {
   const [pin, setPin] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
+  const [jakartaNow, setJakartaNow] = useState<Date>(() => new Date());
   const [page, setPage] = useState<'challenge' | 'calculator'>('challenge');
   const [phase, setPhase] = useState<'setup' | 'active'>('setup');
   const [rr, setRr] = useState<1.5 | 2>(1.5);
@@ -173,6 +174,36 @@ export default function App() {
     if (savedUser && savedPinHash) {
       setUsername(savedUser);
     }
+  }, []);
+
+  useEffect(() => {
+    const tick = () => {
+      // Convert "now" to Asia/Jakarta clock time (GMT+7) without changing actual Date epoch.
+      const dt = new Date();
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Jakarta',
+        hour12: false,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }).formatToParts(dt);
+
+      const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+      const y = Number(get('year'));
+      const m = Number(get('month'));
+      const d = Number(get('day'));
+      const hh = Number(get('hour'));
+      const mm = Number(get('minute'));
+      const ss = Number(get('second'));
+      setJakartaNow(new Date(y, m - 1, d, hh, mm, ss));
+    };
+
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
   }, []);
 
   const handleLogout = () => {
@@ -373,6 +404,52 @@ export default function App() {
 
   const challengeName = `${setupData.targetPips} Pip Challenge`;
   const goldNote = useMemo(() => pipValueNote(setupData.targetPips), [setupData.targetPips]);
+
+  const sessionInfo = useMemo(() => {
+    const minutes = jakartaNow.getHours() * 60 + jakartaNow.getMinutes();
+    const tokyoStart = 7 * 60;
+    const tokyoEnd = 16 * 60;
+    const nyStart = 19 * 60;
+    const nyEnd = 22 * 60;
+
+    if (minutes >= tokyoStart && minutes < tokyoEnd) {
+      return {
+        key: 'tokyo' as const,
+        title: 'Tokyo Session',
+        subtitle: '07:00–16:00 (Jakarta GMT+7)',
+        avg: 60.5,
+        low: 33.27,
+        high: 84.23,
+        accent: 'text-blue-300',
+        badge: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
+      };
+    }
+
+    if (minutes >= nyStart && minutes < nyEnd) {
+      return {
+        key: 'newyork' as const,
+        title: 'New York Session',
+        subtitle: '19:00–22:00 (Jakarta GMT+7)',
+        // Using your provided non-news daily range as NY reference (breakout commonly happens in NY).
+        avg: 78.5,
+        low: 34,
+        high: 110,
+        accent: 'text-amber-300',
+        badge: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
+      };
+    }
+
+    return {
+      key: 'none' as const,
+      title: 'Outside Major Session',
+      subtitle: 'Tokyo 07:00–16:00 • New York 19:00–22:00 (Jakarta GMT+7)',
+      avg: null as number | null,
+      low: null as number | null,
+      high: null as number | null,
+      accent: 'text-slate-300',
+      badge: 'bg-slate-500/10 text-slate-300 border-slate-500/20',
+    };
+  }, [jakartaNow]);
 
   if (authPhase === 'login') {
     return (
@@ -729,13 +806,22 @@ export default function App() {
 
             {/* Trading Suggestion */}
             <div className="glass-card rounded-[2.5rem] p-10 border-blue-500/20 shadow-2xl shadow-blue-500/5 relative overflow-hidden">
-               <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
-                 <Target className="w-32 h-32 text-blue-500" />
-               </div>
-               
-               <div className="flex items-center gap-3 mb-8">
-                <div className="w-2 h-8 bg-blue-500 rounded-full" />
-                <h3 className="text-2xl font-bold tracking-tight">Strategy Suggestion</h3>
+              <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
+                <Target className="w-28 h-28 text-blue-500" />
+              </div>
+
+              <div className="flex items-center justify-between gap-6 mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-8 bg-blue-500 rounded-full" />
+                  <div>
+                    <h3 className="text-2xl font-extrabold tracking-tight">Strategy Suggestion</h3>
+                    <p className="mt-1 text-xs text-slate-500">Next-trade parameters (Gold/XAUUSD)</p>
+                  </div>
+                </div>
+                <div className="hidden md:flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Mode</span>
+                  <span className="text-xs font-extrabold text-slate-300">{profitMode === 'rr' ? 'RR' : 'Target Pips'}</span>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
@@ -763,9 +849,9 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-4">
-                <div className="lg:col-span-5 glass-card rounded-2xl p-4 border-slate-800/60">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Target Profit Mode</p>
+              <div className="mt-7 grid grid-cols-1 lg:grid-cols-12 gap-4">
+                <div className="lg:col-span-5 glass-card rounded-2xl p-5 border-slate-800/60">
+                  <p className="text-xs font-extrabold text-slate-500 uppercase tracking-widest mb-3">Target Profit Mode</p>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => setProfitMode('rr')}
@@ -781,13 +867,13 @@ export default function App() {
                     </button>
                   </div>
                   <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
-                    RR Mode: Profit = Risk × (1.5 atau 2). Target Pips: Profit = Pips × Lot × 100.
+                    RR Mode: Profit = Risk × (1.5 atau 2). Target Pips: Profit = Pips × Lot × 10.
                   </p>
                 </div>
 
-                <div className="lg:col-span-7 glass-card rounded-2xl p-4 border-slate-800/60">
+                <div className="lg:col-span-7 glass-card rounded-2xl p-5 border-slate-800/60">
                   <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Lot Size</p>
+                    <p className="text-xs font-extrabold text-slate-500 uppercase tracking-widest">Lot Size</p>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setLotMode('auto')}
@@ -866,39 +952,92 @@ export default function App() {
           </div>
 
           {/* Right Column - Brief History/Metrics */}
-          <div className="lg:col-span-4 space-y-6">
-            <div className="glass-card rounded-3xl p-6 border-slate-800/50">
-               <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Trade Log</h4>
-               <div className="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
-                  {tradeHistory.length === 0 ? (
-                    <div className="text-center py-10">
-                      <History className="w-12 h-12 text-slate-800 mx-auto mb-4" />
-                      <p className="text-slate-500 text-sm font-medium">Awaiting first trade...</p>
+          <div className="lg:col-span-4 space-y-8">
+            <div className="glass-card rounded-3xl p-7 border-slate-800/50">
+              <div className="flex items-start justify-between gap-6">
+                <div>
+                  <div className={`inline-flex items-center px-3 py-1.5 rounded-full border text-[10px] font-extrabold uppercase tracking-widest ${sessionInfo.badge}`}>
+                    {sessionInfo.title}
+                  </div>
+                  <p className="mt-4 text-base font-extrabold text-white">Session Volatility</p>
+                  <p className="mt-1 text-xs text-slate-500">{sessionInfo.subtitle}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Jakarta</p>
+                  <p className="mt-1 text-base font-extrabold text-white font-mono">
+                    {String(jakartaNow.getHours()).padStart(2, '0')}:{String(jakartaNow.getMinutes()).padStart(2, '0')}
+                  </p>
+                </div>
+              </div>
+
+              {sessionInfo.key === 'none' ? (
+                <div className="mt-6 rounded-2xl border border-slate-800/60 bg-slate-950/30 p-5">
+                  <p className="text-sm text-slate-200 font-bold">Outside session window</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Tokyo 07:00–16:00 • New York 19:00–22:00 (GMT+7)
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-6 grid grid-cols-3 gap-4">
+                  <div className="rounded-2xl border border-slate-800/60 bg-gradient-to-b from-slate-950/40 to-slate-950/20 p-4">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Low</p>
+                    <p className={`mt-2 text-xl font-black ${sessionInfo.accent}`}>{sessionInfo.low}</p>
+                    <p className="text-[10px] text-slate-500">points</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800/60 bg-gradient-to-b from-slate-950/40 to-slate-950/20 p-4">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Avg</p>
+                    <p className={`mt-2 text-xl font-black ${sessionInfo.accent}`}>~{sessionInfo.avg}</p>
+                    <p className="text-[10px] text-slate-500">points</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800/60 bg-gradient-to-b from-slate-950/40 to-slate-950/20 p-4">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">High</p>
+                    <p className={`mt-2 text-xl font-black ${sessionInfo.accent}`}>{sessionInfo.high}</p>
+                    <p className="text-[10px] text-slate-500">points</p>
+                  </div>
+                </div>
+              )}
+
+              <p className="mt-5 text-[10px] text-slate-500">Based on recent Feb 2026 visual range analysis (non-news days).</p>
+            </div>
+
+            <div className="glass-card rounded-3xl p-7 border-slate-800/50">
+              <div className="flex items-center justify-between gap-4 mb-6">
+                <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Trade Log</h4>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{tradeHistory.length} trades</span>
+              </div>
+              <div className="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
+                {tradeHistory.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-900/60 border border-slate-800/60 flex items-center justify-center mx-auto mb-4">
+                      <History className="w-7 h-7 text-slate-600" />
                     </div>
-                  ) : (
-                    tradeHistory.map((trade) => (
-                      <div key={trade.level} className="bg-slate-900/40 border border-slate-800/40 rounded-2xl p-4 flex items-center justify-between group hover:border-slate-700 transition-colors">
-                        <div className="flex items-center gap-4">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${trade.result === 'Win' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                            {trade.result === 'Win' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold">Level {trade.level}</p>
-                            <p className="text-[10px] text-slate-500 uppercase tracking-tighter">Gold Standard</p>
-                          </div>
+                    <p className="text-slate-300 text-sm font-bold">No trades yet</p>
+                    <p className="mt-1 text-slate-500 text-xs">Record hasil trade pertama untuk mulai tracking.</p>
+                  </div>
+                ) : (
+                  tradeHistory.map((trade) => (
+                    <div key={trade.level} className="bg-slate-950/30 border border-slate-800/50 rounded-2xl p-4 flex items-center justify-between group hover:border-slate-700 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${trade.result === 'Win' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                          {trade.result === 'Win' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
                         </div>
-                        <div className="text-right">
-                          <p className={`text-sm font-bold ${trade.result === 'Win' ? 'text-green-400' : 'text-red-400'}`}>
-                            {trade.result === 'Win'
-                              ? `+$${formatMoney(trade.winAmount ?? trade.profitGoal)}`
-                              : `-$${formatMoney(trade.lossAmount ?? 0)}`}
-                          </p>
-                          <p className="text-[10px] text-slate-500">${formatMoney(trade.endingBalance)}</p>
+                        <div>
+                          <p className="text-sm font-extrabold text-white">Level {trade.level}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-widest">{trade.result}</p>
                         </div>
                       </div>
-                    ))
-                  )}
-               </div>
+                      <div className="text-right">
+                        <p className={`text-sm font-extrabold ${trade.result === 'Win' ? 'text-green-400' : 'text-red-400'}`}>
+                          {trade.result === 'Win'
+                            ? `+$${formatMoney(trade.winAmount ?? trade.profitGoal)}`
+                            : `-$${formatMoney(trade.lossAmount ?? 0)}`}
+                        </p>
+                        <p className="text-[10px] text-slate-500">${formatMoney(trade.endingBalance)}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
