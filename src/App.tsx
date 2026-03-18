@@ -1706,9 +1706,13 @@ export default function App() {
                   <p className="mt-1 text-slate-500 text-xs">Admin bisa upload playbook pertama.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {playbooks.map((pb) => (
-                    <div key={pb.id} className="rounded-3xl border border-slate-800/60 bg-slate-950/30 overflow-hidden group">
+                <div className="overflow-x-auto custom-scrollbar pb-2 -mr-2 pr-2">
+                  <div className="flex gap-6 snap-x snap-mandatory">
+                    {playbooks.map((pb) => (
+                    <div
+                      key={pb.id}
+                      className="flex-none w-72 sm:w-80 md:w-[calc((100%-1.5rem)/2)] lg:w-[calc((100%-1.5rem*3)/4)] snap-start rounded-3xl border border-slate-800/60 bg-slate-950/30 overflow-hidden group"
+                    >
                       <button
                         onClick={() => openPlaybookViewer(pb)}
                         className="block w-full text-left"
@@ -1732,7 +1736,9 @@ export default function App() {
                               3m: {pb.condition3m}
                             </span>
                           </div>
-                          {pb.notes && <p className="mt-2 text-xs text-slate-500 leading-relaxed">{pb.notes}</p>}
+                          {pb.notes && (
+                            <p className="mt-2 text-xs text-slate-500 leading-relaxed max-h-10 overflow-hidden">{pb.notes}</p>
+                          )}
                         </div>
                       </button>
 
@@ -1749,6 +1755,7 @@ export default function App() {
                       )}
                     </div>
                   ))}
+                  </div>
                 </div>
               )}
             </div>
