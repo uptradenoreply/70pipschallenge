@@ -18,6 +18,9 @@ import { isSupabaseConfigured, supabase } from './supabaseClient';
 const formatMoney = (value: number) =>
   value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const CHALLENGE_SESSION_KEY = (uname: string) => `challenge_session:${uname}`;
+const createChallengeSessionId = (uname: string) => `user:${uname}:${crypto.randomUUID()}`;
+
 const pipValueNote = (pips: number) =>
   `XAU/USD: 1 pip = 0.01 (10 points). Est. $/pip = lot × 10 (0.01 lot=$0.10, 0.10 lot=$1, 1.00 lot=$10). Target: ${pips} pips (Profit target: 1.5R–2R).`;
 
@@ -310,7 +313,12 @@ export default function App() {
         }
 
         localStorage.setItem(AUTH_USER_KEY, uname);
-        setSessionId(`user:${uname}`);
+        const existingSession = localStorage.getItem(CHALLENGE_SESSION_KEY(uname));
+        const session = existingSession && existingSession.startsWith(`user:${uname}:`)
+          ? existingSession
+          : createChallengeSessionId(uname);
+        localStorage.setItem(CHALLENGE_SESSION_KEY(uname), session);
+        setSessionId(session);
       } else {
         // Fallback: local-only PIN
         const savedUser = localStorage.getItem(AUTH_USER_KEY);
@@ -327,7 +335,12 @@ export default function App() {
           localStorage.setItem(AUTH_PIN_HASH_KEY, pinHash);
         }
 
-        setSessionId(`user:${uname}`);
+        const existingSession = localStorage.getItem(CHALLENGE_SESSION_KEY(uname));
+        const session = existingSession && existingSession.startsWith(`user:${uname}:`)
+          ? existingSession
+          : createChallengeSessionId(uname);
+        localStorage.setItem(CHALLENGE_SESSION_KEY(uname), session);
+        setSessionId(session);
       }
 
       setAuthPhase('ready');
@@ -1068,7 +1081,18 @@ export default function App() {
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setPhase('setup')}
+                onClick={() => {
+                  const uname = username.trim().toLowerCase();
+                  if (uname) {
+                    const newSession = createChallengeSessionId(uname);
+                    localStorage.setItem(CHALLENGE_SESSION_KEY(uname), newSession);
+                    setSessionId(newSession);
+                  }
+                  setTradeHistory([]);
+                  setCurrentLevel(1);
+                  setCurrentBalance(setupData.initialBalance);
+                  setPhase('setup');
+                }}
                 className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
               >
                 Reset Challenge
