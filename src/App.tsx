@@ -234,6 +234,10 @@ export default function App() {
       const ss = Number(get('second'));
       setJakartaNow(new Date(y, m - 1, d, hh, mm, ss));
     };
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const openPlaybookViewer = (item: PlaybookItem) => {
     setActivePlaybook(item);
@@ -244,11 +248,6 @@ export default function App() {
     setActivePlaybook(null);
     setPlaybookZoom(1);
   };
-
-    tick();
-    const id = window.setInterval(tick, 30_000);
-    return () => window.clearInterval(id);
-  }, []);
 
   const handleLogout = () => {
     setAuthPhase('login');
