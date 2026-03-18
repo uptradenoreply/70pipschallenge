@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  BookOpen,
   ChevronRight,
   Coins,
   DollarSign,
   History,
   LayoutDashboard,
+  Mail,
   Percent,
   Settings,
   Target,
@@ -54,6 +56,16 @@ interface SetupData {
   riskPercentage: number;
 }
 
+interface PlaybookItem {
+  id: string;
+  title: string;
+  notes: string | null;
+  trend15m: 'Uptrend' | 'Downtrend';
+  condition3m: 'Uptrend' | 'Downtrend';
+  imagePath: string;
+  createdAt: string;
+}
+
 function floorTo2(value: number) {
   return Math.floor(value * 100) / 100;
 }
@@ -69,7 +81,7 @@ function MoneyManagementCalculator() {
 
   const maxLot = useMemo(() => {
     if (!isFinite(balance) || balance <= 0) return 0;
-    const lot = (balance / 100) * 0.01;
+    const lot = (balance / 200) * 0.01;
     return floorTo2(lot);
   }, [balance]);
 
@@ -145,6 +157,25 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [jakartaNow, setJakartaNow] = useState<Date>(() => new Date());
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [reminderEmail, setReminderEmail] = useState('');
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderBusy, setReminderBusy] = useState(false);
+  const [reminderError, setReminderError] = useState<string | null>(null);
+
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
+  const [showPlaybookModal, setShowPlaybookModal] = useState(false);
+  const [playbooks, setPlaybooks] = useState<PlaybookItem[]>([]);
+  const [playbookBusy, setPlaybookBusy] = useState(false);
+  const [playbookError, setPlaybookError] = useState<string | null>(null);
+  const [pbTitle, setPbTitle] = useState('');
+  const [pbNotes, setPbNotes] = useState('');
+  const [pbTrend15m, setPbTrend15m] = useState<'Uptrend' | 'Downtrend'>('Uptrend');
+  const [pbCondition3m, setPbCondition3m] = useState<'Uptrend' | 'Downtrend'>('Uptrend');
+  const [pbFile, setPbFile] = useState<File | null>(null);
+  const [pbUploading, setPbUploading] = useState(false);
   const [page, setPage] = useState<'challenge' | 'calculator'>('challenge');
   const [phase, setPhase] = useState<'setup' | 'active'>('setup');
   const [rr, setRr] = useState<1.5 | 2>(1.5);
@@ -340,6 +371,200 @@ export default function App() {
     })();
   }, [sessionId]);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+    const uname = username.trim().toLowerCase();
+    if (!uname) return;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('email,reminder_enabled')
+        .eq('username', uname)
+        .limit(1);
+
+      if (error) return;
+      const row = (data ?? [])[0] as { email?: string | null; reminder_enabled?: boolean | null } | undefined;
+      if (!row) return;
+      setReminderEmail(row.email ?? '');
+      setReminderEnabled(Boolean(row.reminder_enabled));
+    })();
+  }, [username]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      setIsAdmin(false);
+      setAdminBusy(false);
+      setAdminError(null);
+      return;
+    }
+    const uname = username.trim().toLowerCase();
+    if (!uname) {
+      setIsAdmin(false);
+      setAdminBusy(false);
+      setAdminError(null);
+      return;
+    }
+
+    (async () => {
+      setAdminBusy(true);
+      setAdminError(null);
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('is_admin')
+          .ilike('username', uname)
+          .limit(1);
+        if (error) throw new Error(error.message);
+        const row = (data ?? [])[0] as { is_admin?: boolean | null } | undefined;
+        if (!row) throw new Error(`User '${uname}' tidak ditemukan di table users.`);
+        setIsAdmin(Boolean(row.is_admin));
+      } catch (e) {
+        setIsAdmin(false);
+        setAdminError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setAdminBusy(false);
+      }
+    })();
+  }, [username]);
+
+  const loadPlaybooks = async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      setPlaybooks([]);
+      return;
+    }
+    setPlaybookBusy(true);
+    setPlaybookError(null);
+    try {
+      const { data, error } = await supabase
+        .from('playbooks')
+        .select('id,title,notes,trend_15m,condition_3m,image_path,created_at')
+        .order('created_at', { ascending: false });
+      if (error) throw new Error(error.message);
+      const mapped = (data ?? []).map((r: any) => ({
+        id: String(r.id),
+        title: String(r.title ?? ''),
+        notes: r.notes == null ? null : String(r.notes),
+        trend15m: (String(r.trend_15m ?? 'Uptrend') === 'Downtrend' ? 'Downtrend' : 'Uptrend') as 'Uptrend' | 'Downtrend',
+        condition3m: (String(r.condition_3m ?? 'Uptrend') === 'Downtrend' ? 'Downtrend' : 'Uptrend') as 'Uptrend' | 'Downtrend',
+        imagePath: String(r.image_path ?? ''),
+        createdAt: String(r.created_at ?? ''),
+      })) as PlaybookItem[];
+      setPlaybooks(mapped);
+    } catch (e) {
+      setPlaybookError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPlaybookBusy(false);
+    }
+  };
+
+  const getPlaybookImageUrl = (path: string) => {
+    if (!isSupabaseConfigured || !supabase) return '';
+    const { data } = supabase.storage.from('playbooks').getPublicUrl(path);
+    return data.publicUrl;
+  };
+
+  const createPlaybook = async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      setPlaybookError('Supabase belum dikonfigurasi.');
+      return;
+    }
+    if (!isAdmin) {
+      setPlaybookError('Admin only.');
+      return;
+    }
+    if (!pbTitle.trim()) {
+      setPlaybookError('Title wajib diisi.');
+      return;
+    }
+    if (!pbFile) {
+      setPlaybookError('Gambar wajib diupload.');
+      return;
+    }
+
+    const uname = username.trim().toLowerCase();
+    setPbUploading(true);
+    setPlaybookError(null);
+    try {
+      const safeName = pbFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const objectPath = `${uname}/${crypto.randomUUID()}_${safeName}`;
+      const { error: uploadError } = await supabase
+        .storage
+        .from('playbooks')
+        .upload(objectPath, pbFile, { upsert: false, contentType: pbFile.type || 'image/png' });
+      if (uploadError) throw new Error(`Upload gagal: ${uploadError.message}`);
+
+      const { error: insertError } = await supabase.from('playbooks').insert({
+        title: pbTitle.trim(),
+        notes: pbNotes.trim() || null,
+        trend_15m: pbTrend15m,
+        condition_3m: pbCondition3m,
+        image_path: objectPath,
+        created_by: uname,
+      });
+      if (insertError) throw new Error(`Simpan data gagal: ${insertError.message}`);
+
+      setPbTitle('');
+      setPbNotes('');
+      setPbTrend15m('Uptrend');
+      setPbCondition3m('Uptrend');
+      setPbFile(null);
+      await loadPlaybooks();
+    } catch (e) {
+      setPlaybookError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPbUploading(false);
+    }
+  };
+
+  const deletePlaybook = async (item: PlaybookItem) => {
+    if (!isSupabaseConfigured || !supabase) return;
+    if (!isAdmin) return;
+    setPlaybookError(null);
+    try {
+      const { error: delRowError } = await supabase.from('playbooks').delete().eq('id', item.id);
+      if (delRowError) throw new Error(delRowError.message);
+      const { error: delFileError } = await supabase.storage.from('playbooks').remove([item.imagePath]);
+      if (delFileError) throw new Error(delFileError.message);
+      await loadPlaybooks();
+    } catch (e) {
+      setPlaybookError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const saveReminderSettings = async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      setReminderError('Supabase belum dikonfigurasi.');
+      return;
+    }
+    const uname = username.trim().toLowerCase();
+    if (!uname) return;
+
+    if (reminderEnabled) {
+      const email = reminderEmail.trim();
+      const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+      if (!ok) {
+        setReminderError('Email tidak valid.');
+        return;
+      }
+    }
+
+    setReminderBusy(true);
+    setReminderError(null);
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ email: reminderEmail.trim() || null, reminder_enabled: reminderEnabled })
+        .eq('username', uname);
+      if (error) throw new Error(error.message);
+      setShowReminderModal(false);
+    } catch (e) {
+      setReminderError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReminderBusy(false);
+    }
+  };
+
   async function insertTrade(record: TradeRecord) {
     if (!sessionId || !isSupabaseConfigured || !supabase) return;
     const { error } = await supabase.from('trades').insert({
@@ -369,7 +594,12 @@ export default function App() {
 
     // User lot input (manual)
     const lotNum = parseFloat(lotSizeInput);
-    const manualLot = lotMode === 'manual' && isFinite(lotNum) && lotNum > 0 ? lotNum : null;
+    const manualLotRaw = lotMode === 'manual' && isFinite(lotNum) && lotNum > 0 ? lotNum : null;
+
+    // Lot cap rule:
+    // For each $200 balance, max lot is 0.01.
+    // Example: $200 => 0.01, $400 => 0.02, etc.
+    const maxLot = currentBalance > 0 ? (currentBalance / 200) * 0.01 : 0;
 
     // XAU/USD pip value rule:
     // Profit ($) = Pips * Lot * 10
@@ -378,7 +608,9 @@ export default function App() {
 
     // Auto lot is derived from RR target
     const autoLot = rrProfit / (setupData.targetPips * 10);
-    const lotSize = manualLot ?? autoLot;
+    const cappedAutoLot = maxLot > 0 ? Math.min(autoLot, maxLot) : autoLot;
+    const cappedManualLot = manualLotRaw == null ? null : (maxLot > 0 ? Math.min(manualLotRaw, maxLot) : manualLotRaw);
+    const lotSize = cappedManualLot ?? cappedAutoLot;
 
     const expectedProfitAtPips = Number((setupData.targetPips * lotSize * 10).toFixed(2));
 
@@ -750,6 +982,18 @@ export default function App() {
               >
                 Calculator
               </button>
+              <button
+                onClick={async () => {
+                  setPlaybookError(null);
+                  setShowPlaybookModal(true);
+                  await loadPlaybooks();
+                }}
+                className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all inline-flex items-center gap-2"
+                title="Playbook"
+              >
+                <BookOpen className="w-4 h-4 text-slate-300" />
+                Playbook
+              </button>
             </div>
 
             <div className="flex items-center gap-2">
@@ -758,6 +1002,17 @@ export default function App() {
                 className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
               >
                 Reset Challenge
+              </button>
+              <button
+                onClick={() => {
+                  setReminderError(null);
+                  setShowReminderModal(true);
+                }}
+                className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all inline-flex items-center gap-2"
+                title="Email Reminders"
+              >
+                <Mail className="w-4 h-4 text-slate-300" />
+                Reminders
               </button>
               <button
                 onClick={handleLogout}
@@ -1182,6 +1437,253 @@ export default function App() {
                   Confirm Loss
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReminderModal && (
+        <div className="fixed inset-0 bg-[#020617]/90 backdrop-blur-xl flex items-center justify-center p-6 z-[100]">
+          <div className="glass-card rounded-[2rem] p-10 w-full max-w-lg border-slate-800 shadow-2xl">
+            <h3 className="text-2xl font-bold mb-2">Email Reminders</h3>
+            <p className="text-slate-400 text-sm mb-8">
+              Kirim reminder otomatis jam 09:00, 11:00, dan 20:00 WIB.
+            </p>
+
+            <div className="space-y-6">
+              <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800/60 bg-slate-950/30 px-5 py-4">
+                <div>
+                  <p className="text-sm font-extrabold text-white">Enable Reminders</p>
+                  <p className="text-xs text-slate-500">Aktifkan pengiriman email terjadwal.</p>
+                </div>
+                <button
+                  onClick={() => setReminderEnabled((v) => !v)}
+                  className={`w-14 h-8 rounded-full border transition-all relative ${reminderEnabled ? 'bg-blue-600/80 border-blue-500/40' : 'bg-slate-900 border-slate-800'}`}
+                  aria-label="Toggle reminders"
+                >
+                  <span
+                    className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white transition-all ${reminderEnabled ? 'left-7' : 'left-1'}`}
+                  />
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Email</label>
+                <input
+                  value={reminderEmail}
+                  onChange={(e) => setReminderEmail(e.target.value)}
+                  disabled={!reminderEnabled}
+                  className={`w-full bg-slate-900/50 border rounded-2xl py-4 px-4 text-lg font-medium outline-none transition-all ${reminderEnabled ? 'border-slate-700/50 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 hover:bg-slate-900' : 'border-slate-800/50 opacity-60 cursor-not-allowed'}`}
+                  placeholder="you@email.com"
+                  autoComplete="email"
+                />
+              </div>
+
+              {reminderError && (
+                <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  {reminderError}
+                </div>
+              )}
+
+              <div className="flex gap-4 pt-2">
+                <button
+                  onClick={() => {
+                    setShowReminderModal(false);
+                    setReminderError(null);
+                  }}
+                  className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 font-bold py-4 rounded-2xl transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveReminderSettings}
+                  disabled={reminderBusy}
+                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold py-4 rounded-2xl transition-all shadow-lg shadow-blue-900/25"
+                >
+                  {reminderBusy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPlaybookModal && (
+        <div className="fixed inset-0 bg-[#020617]/90 backdrop-blur-xl flex items-center justify-center p-6 z-[100]">
+          <div className="glass-card rounded-[2rem] p-10 w-full max-w-5xl border-slate-800 shadow-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-start justify-between gap-6 mb-8">
+              <div>
+                <h3 className="text-2xl font-extrabold">Trading Playbook</h3>
+                <p className="text-slate-400 text-sm">Kumpulan setup visual sebagai panduan eksekusi.</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPlaybookModal(false);
+                  setPlaybookError(null);
+                }}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
+              >
+                Close
+              </button>
+            </div>
+
+            {!isAdmin && (
+              <div className="rounded-3xl border border-slate-800/60 bg-slate-950/30 p-6 mb-8">
+                <p className="text-xs font-extrabold text-slate-500 uppercase tracking-widest">Admin Form</p>
+                <p className="mt-2 text-sm text-slate-300">
+                  Form input playbook hanya muncul untuk admin.
+                </p>
+                {adminBusy ? (
+                  <p className="mt-2 text-xs text-slate-500">Checking admin status…</p>
+                ) : adminError ? (
+                  <p className="mt-2 text-xs text-red-300">Admin check failed: {adminError}</p>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Pastikan `users.is_admin = true` untuk username: <span className="font-bold text-slate-300">{username.trim().toLowerCase()}</span>
+                  </p>
+                )}
+
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 px-4 py-3">
+                    <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">Supabase</p>
+                    <p className="mt-1 text-xs text-slate-300 font-bold">{isSupabaseConfigured ? 'Configured' : 'Not Configured'}</p>
+                    {!isSupabaseConfigured && (
+                      <p className="mt-1 text-[10px] text-slate-500">Set `VITE_SUPABASE_URL` dan `VITE_SUPABASE_ANON_KEY`.</p>
+                    )}
+                  </div>
+                  <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 px-4 py-3">
+                    <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">Username (active)</p>
+                    <p className="mt-1 text-xs text-slate-300 font-bold">{username.trim().toLowerCase() || '-'}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isAdmin && (
+              <div className="rounded-3xl border border-slate-800/60 bg-slate-950/30 p-6 mb-8">
+                <p className="text-xs font-extrabold text-slate-500 uppercase tracking-widest mb-4">Admin — Add Playbook</p>
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                  <div className="md:col-span-4">
+                    <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Title</label>
+                    <input
+                      value={pbTitle}
+                      onChange={(e) => setPbTitle(e.target.value)}
+                      className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
+                      placeholder="contoh: OB + Liquidity Sweep"
+                    />
+                  </div>
+                  <div className="md:col-span-5">
+                    <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Notes</label>
+                    <input
+                      value={pbNotes}
+                      onChange={(e) => setPbNotes(e.target.value)}
+                      className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
+                      placeholder="rules singkat / checklist"
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">15 Menit</label>
+                    <select
+                      value={pbTrend15m}
+                      onChange={(e) => setPbTrend15m(e.target.value === 'Downtrend' ? 'Downtrend' : 'Uptrend')}
+                      className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
+                    >
+                      <option value="Uptrend">Uptrend</option>
+                      <option value="Downtrend">Downtrend</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-4">
+                    <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Kondisi 3 Menit</label>
+                    <select
+                      value={pbCondition3m}
+                      onChange={(e) => setPbCondition3m(e.target.value === 'Downtrend' ? 'Downtrend' : 'Uptrend')}
+                      className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
+                    >
+                      <option value="Uptrend">Uptrend</option>
+                      <option value="Downtrend">Downtrend</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-5">
+                    <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Upload Gambar</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setPbFile(e.target.files?.[0] ?? null)}
+                      className="w-full text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-slate-900 file:text-slate-200 hover:file:bg-slate-800"
+                    />
+                  </div>
+                </div>
+                <div className="mt-5 flex items-center justify-between gap-4 flex-wrap">
+                  <p className="text-[10px] text-slate-500">Upload ke bucket `playbooks` (public) dan simpan metadata ke table `playbooks`.</p>
+                  <button
+                    onClick={createPlaybook}
+                    disabled={pbUploading}
+                    className="px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold transition-all"
+                  >
+                    {pbUploading ? 'Uploading…' : 'Add Playbook'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {playbookError && (
+              <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200 mb-6">
+                {playbookError}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+              {playbookBusy ? (
+                <div className="text-center py-16 text-slate-400">Loading…</div>
+              ) : playbooks.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="w-14 h-14 rounded-2xl bg-slate-900/60 border border-slate-800/60 flex items-center justify-center mx-auto mb-4">
+                    <BookOpen className="w-7 h-7 text-slate-600" />
+                  </div>
+                  <p className="text-slate-300 text-sm font-bold">No playbook yet</p>
+                  <p className="mt-1 text-slate-500 text-xs">Admin bisa upload playbook pertama.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {playbooks.map((pb) => (
+                    <div key={pb.id} className="rounded-3xl border border-slate-800/60 bg-slate-950/30 overflow-hidden group">
+                      <div className="aspect-video bg-slate-950/40">
+                        <img
+                          src={getPlaybookImageUrl(pb.imagePath)}
+                          alt={pb.title}
+                          className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                          loading="lazy"
+                        />
+                      </div>
+                      <div className="p-5">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-extrabold text-white">{pb.title}</p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <span className="px-2.5 py-1 rounded-xl border border-slate-800 bg-slate-900/40 text-[10px] font-extrabold text-slate-300">
+                                15m: {pb.trend15m}
+                              </span>
+                              <span className="px-2.5 py-1 rounded-xl border border-slate-800 bg-slate-900/40 text-[10px] font-extrabold text-slate-300">
+                                3m: {pb.condition3m}
+                              </span>
+                            </div>
+                            {pb.notes && <p className="mt-2 text-xs text-slate-500 leading-relaxed">{pb.notes}</p>}
+                          </div>
+                          {isAdmin && (
+                            <button
+                              onClick={() => void deletePlaybook(pb)}
+                              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-extrabold text-slate-200 transition-all"
+                              title="Delete"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
