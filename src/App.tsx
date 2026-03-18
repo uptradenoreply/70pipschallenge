@@ -271,6 +271,35 @@ export default function App() {
     setPhase('setup');
   };
 
+  const resetChallengeForUser = async () => {
+    const uname = username.trim().toLowerCase();
+    const stableSession = uname ? `user:${uname}` : null;
+
+    if (stableSession && isSupabaseConfigured && supabase) {
+      setIsSyncing(true);
+      setSyncError(null);
+      try {
+        const { error } = await supabase.from('trades').delete().eq('session_id', stableSession);
+        if (error) {
+          setSyncError(`Reset cloud gagal: ${error.message}`);
+        }
+      } catch {
+        setSyncError('Reset cloud gagal.');
+      } finally {
+        setIsSyncing(false);
+      }
+    }
+
+    if (stableSession) {
+      localStorage.setItem(CHALLENGE_SESSION_KEY(uname), stableSession);
+      setSessionId(stableSession);
+    }
+    setTradeHistory([]);
+    setCurrentLevel(1);
+    setCurrentBalance(setupData.initialBalance);
+    setPhase('setup');
+  };
+
   const handleLogin = async () => {
     const u = username.trim();
     const p = pin.trim();
@@ -323,13 +352,7 @@ export default function App() {
         }
 
         localStorage.setItem(AUTH_USER_KEY, uname);
-        const existingSession = localStorage.getItem(CHALLENGE_SESSION_KEY(uname));
-        const legacySession = `user:${uname}`;
-        const session = existingSession && (existingSession === legacySession || existingSession.startsWith(`user:${uname}:`))
-          ? existingSession
-          : existingSession && existingSession.startsWith(`user:${uname}`)
-            ? legacySession
-            : legacySession;
+        const session = `user:${uname}`;
         localStorage.setItem(CHALLENGE_SESSION_KEY(uname), session);
         setSessionId(session);
       } else {
@@ -348,13 +371,7 @@ export default function App() {
           localStorage.setItem(AUTH_PIN_HASH_KEY, pinHash);
         }
 
-        const existingSession = localStorage.getItem(CHALLENGE_SESSION_KEY(uname));
-        const legacySession = `user:${uname}`;
-        const session = existingSession && (existingSession === legacySession || existingSession.startsWith(`user:${uname}:`))
-          ? existingSession
-          : existingSession && existingSession.startsWith(`user:${uname}`)
-            ? legacySession
-            : legacySession;
+        const session = `user:${uname}`;
         localStorage.setItem(CHALLENGE_SESSION_KEY(uname), session);
         setSessionId(session);
       }
@@ -1097,18 +1114,7 @@ export default function App() {
 
             <div className="hidden sm:flex items-center gap-2">
               <button
-                onClick={() => {
-                  const uname = username.trim().toLowerCase();
-                  if (uname) {
-                    const newSession = createChallengeSessionId(uname);
-                    localStorage.setItem(CHALLENGE_SESSION_KEY(uname), newSession);
-                    setSessionId(newSession);
-                  }
-                  setTradeHistory([]);
-                  setCurrentLevel(1);
-                  setCurrentBalance(setupData.initialBalance);
-                  setPhase('setup');
-                }}
+                onClick={() => void resetChallengeForUser()}
                 className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
               >
                 Reset Challenge
@@ -1198,16 +1204,7 @@ export default function App() {
 
                 <button
                   onClick={() => {
-                    const uname = username.trim().toLowerCase();
-                    if (uname) {
-                      const newSession = createChallengeSessionId(uname);
-                      localStorage.setItem(CHALLENGE_SESSION_KEY(uname), newSession);
-                      setSessionId(newSession);
-                    }
-                    setTradeHistory([]);
-                    setCurrentLevel(1);
-                    setCurrentBalance(setupData.initialBalance);
-                    setPhase('setup');
+                    void resetChallengeForUser();
                     setMobileMenuOpen(false);
                   }}
                   className="px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-sm font-semibold transition-all"
