@@ -673,6 +673,7 @@ export default function App() {
     const cappedAutoLot = maxLot > 0 ? Math.min(autoLot, maxLot) : autoLot;
     const cappedManualLot = manualLotRaw == null ? null : (maxLot > 0 ? Math.min(manualLotRaw, maxLot) : manualLotRaw);
     const lotSize = cappedManualLot ?? cappedAutoLot;
+    const isCapped = (manualLotRaw != null && cappedManualLot != null && cappedManualLot < manualLotRaw) || (cappedAutoLot < autoLot);
 
     const expectedProfitAtPips = Number((setupData.targetPips * lotSize * 10).toFixed(2));
 
@@ -681,6 +682,8 @@ export default function App() {
     return {
       riskAmount,
       lotSize: Number(lotSize.toFixed(2)),
+      maxLot: Number(maxLot.toFixed(2)),
+      isCapped,
       profitMin,
       profitMax,
       profitSelected,
@@ -688,6 +691,11 @@ export default function App() {
       rrProfit,
     };
   }, [currentBalance, setupData.riskPercentage, setupData.targetPips, rr, profitMode, lotMode, lotSizeInput]);
+
+  const maxLotAllowed = useMemo(() => {
+    if (!isFinite(currentBalance) || currentBalance <= 0) return 0;
+    return Number(((currentBalance / 200) * 0.01).toFixed(2));
+  }, [currentBalance]);
 
   const handleStartChallenge = () => {
     setCurrentBalance(setupData.initialBalance);
@@ -1163,6 +1171,9 @@ export default function App() {
                       Based on {setupData.targetPips} pips and lot size (${formatMoney(suggestions.expectedProfitAtPips)} expected).
                     </p>
                   )}
+                  {profitMode === 'rr' && lotMode === 'manual' && (
+                    <p className="text-[10px] text-slate-500 font-medium">RR mode tidak mengubah profit target berdasarkan lot.</p>
+                  )}
                 </div>
               </div>
 
@@ -1213,13 +1224,30 @@ export default function App() {
                       <input
                         type="number"
                         value={lotSizeInput}
-                        onChange={(e) => setLotSizeInput(e.target.value)}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (lotMode !== 'manual') {
+                            setLotSizeInput(raw);
+                            return;
+                          }
+                          const n = parseFloat(raw);
+                          if (!isFinite(n) || n <= 0) {
+                            setLotSizeInput(raw);
+                            return;
+                          }
+                          const capped = maxLotAllowed > 0 ? Math.min(n, maxLotAllowed) : n;
+                          setLotSizeInput(String(capped));
+                        }}
                         disabled={lotMode !== 'manual'}
                         className={`w-full bg-slate-900/50 border rounded-2xl py-3 px-4 text-sm font-semibold outline-none transition-all ${lotMode === 'manual' ? 'border-slate-700/50 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 hover:bg-slate-900' : 'border-slate-800/50 opacity-60 cursor-not-allowed'}`}
                         placeholder="contoh: 0.10"
                         min="0"
                         step="0.01"
                       />
+                      <p className="mt-2 text-[10px] text-slate-500 font-medium">Max lot: {maxLotAllowed.toFixed(2)} (rule: $200 = 0.01)</p>
+                      {suggestions.isCapped && (
+                        <p className="mt-1 text-[10px] text-amber-200 font-medium">Lot di-cap ke max lot.</p>
+                      )}
                     </div>
                     <div className="text-sm text-slate-300">
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Expected @ {setupData.targetPips} pips</p>
