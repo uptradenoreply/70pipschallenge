@@ -21,7 +21,12 @@ const formatMoney = (value: number) =>
   value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const CHALLENGE_SESSION_KEY = (uname: string) => `challenge_session:${uname}`;
-const createChallengeSessionId = (uname: string) => `user:${uname}:${crypto.randomUUID()}`;
+const createChallengeSessionId = (uname: string) => {
+  const uuid = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `user:${uname}:${uuid}`;
+};
 
 const pipValueNote = (pips: number) =>
   `XAU/USD: 1 pip = 0.01 (10 points). Est. $/pip = lot × 10 (0.01 lot=$0.10, 0.10 lot=$1, 1.00 lot=$10). Target: ${pips} pips (Profit target: 1.5R–2R).`;
@@ -319,9 +324,12 @@ export default function App() {
 
         localStorage.setItem(AUTH_USER_KEY, uname);
         const existingSession = localStorage.getItem(CHALLENGE_SESSION_KEY(uname));
-        const session = existingSession && existingSession.startsWith(`user:${uname}:`)
+        const legacySession = `user:${uname}`;
+        const session = existingSession && (existingSession === legacySession || existingSession.startsWith(`user:${uname}:`))
           ? existingSession
-          : createChallengeSessionId(uname);
+          : existingSession && existingSession.startsWith(`user:${uname}`)
+            ? legacySession
+            : legacySession;
         localStorage.setItem(CHALLENGE_SESSION_KEY(uname), session);
         setSessionId(session);
       } else {
@@ -341,9 +349,12 @@ export default function App() {
         }
 
         const existingSession = localStorage.getItem(CHALLENGE_SESSION_KEY(uname));
-        const session = existingSession && existingSession.startsWith(`user:${uname}:`)
+        const legacySession = `user:${uname}`;
+        const session = existingSession && (existingSession === legacySession || existingSession.startsWith(`user:${uname}:`))
           ? existingSession
-          : createChallengeSessionId(uname);
+          : existingSession && existingSession.startsWith(`user:${uname}`)
+            ? legacySession
+            : legacySession;
         localStorage.setItem(CHALLENGE_SESSION_KEY(uname), session);
         setSessionId(session);
       }
