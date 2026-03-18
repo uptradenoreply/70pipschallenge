@@ -167,6 +167,9 @@ export default function App() {
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
   const [showPlaybookModal, setShowPlaybookModal] = useState(false);
+  const [showAddPlaybookModal, setShowAddPlaybookModal] = useState(false);
+  const [activePlaybook, setActivePlaybook] = useState<PlaybookItem | null>(null);
+  const [playbookZoom, setPlaybookZoom] = useState(1);
   const [playbooks, setPlaybooks] = useState<PlaybookItem[]>([]);
   const [playbookBusy, setPlaybookBusy] = useState(false);
   const [playbookError, setPlaybookError] = useState<string | null>(null);
@@ -231,6 +234,16 @@ export default function App() {
       const ss = Number(get('second'));
       setJakartaNow(new Date(y, m - 1, d, hh, mm, ss));
     };
+
+  const openPlaybookViewer = (item: PlaybookItem) => {
+    setActivePlaybook(item);
+    setPlaybookZoom(1);
+  };
+
+  const closePlaybookViewer = () => {
+    setActivePlaybook(null);
+    setPlaybookZoom(1);
+  };
 
     tick();
     const id = window.setInterval(tick, 30_000);
@@ -436,11 +449,35 @@ export default function App() {
     setPlaybookBusy(true);
     setPlaybookError(null);
     try {
-      const { data, error } = await supabase
+      const query = supabase
         .from('playbooks')
         .select('id,title,notes,trend_15m,condition_3m,image_path,created_at')
         .order('created_at', { ascending: false });
-      if (error) throw new Error(error.message);
+      let data: any[] | null = null;
+      let error: { message: string } | null = null;
+
+      const res1 = await query;
+      data = (res1 as any).data ?? null;
+      error = (res1 as any).error ?? null;
+
+      if (error) {
+        const msg = String(error.message || 'Unknown error');
+        const missingTrendColumns =
+          msg.includes('trend_15m') ||
+          msg.includes('condition_3m') ||
+          msg.includes("schema cache") ||
+          msg.includes('does not exist');
+
+        if (!missingTrendColumns) throw new Error(msg);
+
+        const res2 = await supabase
+          .from('playbooks')
+          .select('id,title,notes,image_path,created_at')
+          .order('created_at', { ascending: false });
+        if (res2.error) throw new Error(res2.error.message);
+        data = res2.data as any[];
+      }
+
       const mapped = (data ?? []).map((r: any) => ({
         id: String(r.id),
         title: String(r.title ?? ''),
@@ -494,15 +531,41 @@ export default function App() {
         .upload(objectPath, pbFile, { upsert: false, contentType: pbFile.type || 'image/png' });
       if (uploadError) throw new Error(`Upload gagal: ${uploadError.message}`);
 
-      const { error: insertError } = await supabase.from('playbooks').insert({
+      const payloadFull = {
         title: pbTitle.trim(),
         notes: pbNotes.trim() || null,
         trend_15m: pbTrend15m,
         condition_3m: pbCondition3m,
         image_path: objectPath,
         created_by: uname,
-      });
-      if (insertError) throw new Error(`Simpan data gagal: ${insertError.message}`);
+      };
+
+      let insertError = (await supabase.from('playbooks').insert(payloadFull)).error;
+
+      if (insertError) {
+        const msg = String(insertError.message || 'Unknown error');
+        const missingTrendColumns =
+          msg.includes('trend_15m') ||
+          msg.includes('condition_3m') ||
+          msg.includes("schema cache") ||
+          msg.includes('does not exist');
+
+        if (!missingTrendColumns) throw new Error(`Simpan data gagal: ${msg}`);
+
+        const payloadLegacy = {
+          title: pbTitle.trim(),
+          notes: pbNotes.trim() || null,
+          image_path: objectPath,
+          created_by: uname,
+        };
+
+        insertError = (await supabase.from('playbooks').insert(payloadLegacy)).error;
+        if (insertError) throw new Error(`Simpan data gagal: ${insertError.message}`);
+
+        setPlaybookError(
+          "Kolom trend belum ada di table 'playbooks'. Data tersimpan tanpa trend. Jalankan SQL: ALTER TABLE playbooks ADD COLUMN trend_15m text; ALTER TABLE playbooks ADD COLUMN condition_3m text;"
+        );
+      }
 
       setPbTitle('');
       setPbNotes('');
@@ -1516,15 +1579,30 @@ export default function App() {
                 <h3 className="text-2xl font-extrabold">Trading Playbook</h3>
                 <p className="text-slate-400 text-sm">Kumpulan setup visual sebagai panduan eksekusi.</p>
               </div>
-              <button
-                onClick={() => {
-                  setShowPlaybookModal(false);
-                  setPlaybookError(null);
-                }}
-                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setPlaybookError(null);
+                      setShowAddPlaybookModal(true);
+                    }}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 border border-blue-500/40 rounded-xl text-sm font-semibold transition-all"
+                  >
+                    Add Playbook
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setShowPlaybookModal(false);
+                    setShowAddPlaybookModal(false);
+                    closePlaybookViewer();
+                    setPlaybookError(null);
+                  }}
+                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             {!isAdmin && (
@@ -1559,73 +1637,6 @@ export default function App() {
               </div>
             )}
 
-            {isAdmin && (
-              <div className="rounded-3xl border border-slate-800/60 bg-slate-950/30 p-6 mb-8">
-                <p className="text-xs font-extrabold text-slate-500 uppercase tracking-widest mb-4">Admin — Add Playbook</p>
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                  <div className="md:col-span-4">
-                    <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Title</label>
-                    <input
-                      value={pbTitle}
-                      onChange={(e) => setPbTitle(e.target.value)}
-                      className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
-                      placeholder="contoh: OB + Liquidity Sweep"
-                    />
-                  </div>
-                  <div className="md:col-span-5">
-                    <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Notes</label>
-                    <input
-                      value={pbNotes}
-                      onChange={(e) => setPbNotes(e.target.value)}
-                      className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
-                      placeholder="rules singkat / checklist"
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">15 Menit</label>
-                    <select
-                      value={pbTrend15m}
-                      onChange={(e) => setPbTrend15m(e.target.value === 'Downtrend' ? 'Downtrend' : 'Uptrend')}
-                      className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
-                    >
-                      <option value="Uptrend">Uptrend</option>
-                      <option value="Downtrend">Downtrend</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-4">
-                    <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Kondisi 3 Menit</label>
-                    <select
-                      value={pbCondition3m}
-                      onChange={(e) => setPbCondition3m(e.target.value === 'Downtrend' ? 'Downtrend' : 'Uptrend')}
-                      className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
-                    >
-                      <option value="Uptrend">Uptrend</option>
-                      <option value="Downtrend">Downtrend</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-5">
-                    <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Upload Gambar</label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setPbFile(e.target.files?.[0] ?? null)}
-                      className="w-full text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-slate-900 file:text-slate-200 hover:file:bg-slate-800"
-                    />
-                  </div>
-                </div>
-                <div className="mt-5 flex items-center justify-between gap-4 flex-wrap">
-                  <p className="text-[10px] text-slate-500">Upload ke bucket `playbooks` (public) dan simpan metadata ke table `playbooks`.</p>
-                  <button
-                    onClick={createPlaybook}
-                    disabled={pbUploading}
-                    className="px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold transition-all"
-                  >
-                    {pbUploading ? 'Uploading…' : 'Add Playbook'}
-                  </button>
-                </div>
-              </div>
-            )}
-
             {playbookError && (
               <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200 mb-6">
                 {playbookError}
@@ -1647,43 +1658,194 @@ export default function App() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {playbooks.map((pb) => (
                     <div key={pb.id} className="rounded-3xl border border-slate-800/60 bg-slate-950/30 overflow-hidden group">
-                      <div className="aspect-video bg-slate-950/40">
-                        <img
-                          src={getPlaybookImageUrl(pb.imagePath)}
-                          alt={pb.title}
-                          className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                          loading="lazy"
-                        />
-                      </div>
-                      <div className="p-5">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="text-sm font-extrabold text-white">{pb.title}</p>
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <span className="px-2.5 py-1 rounded-xl border border-slate-800 bg-slate-900/40 text-[10px] font-extrabold text-slate-300">
-                                15m: {pb.trend15m}
-                              </span>
-                              <span className="px-2.5 py-1 rounded-xl border border-slate-800 bg-slate-900/40 text-[10px] font-extrabold text-slate-300">
-                                3m: {pb.condition3m}
-                              </span>
-                            </div>
-                            {pb.notes && <p className="mt-2 text-xs text-slate-500 leading-relaxed">{pb.notes}</p>}
-                          </div>
-                          {isAdmin && (
-                            <button
-                              onClick={() => void deletePlaybook(pb)}
-                              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-extrabold text-slate-200 transition-all"
-                              title="Delete"
-                            >
-                              Delete
-                            </button>
-                          )}
+                      <button
+                        onClick={() => openPlaybookViewer(pb)}
+                        className="block w-full text-left"
+                        title="Open"
+                      >
+                        <div className="aspect-video bg-slate-950/40">
+                          <img
+                            src={getPlaybookImageUrl(pb.imagePath)}
+                            alt={pb.title}
+                            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                            loading="lazy"
+                          />
                         </div>
-                      </div>
+                        <div className="p-5">
+                          <p className="text-sm font-extrabold text-white">{pb.title}</p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="px-2.5 py-1 rounded-xl border border-slate-800 bg-slate-900/40 text-[10px] font-extrabold text-slate-300">
+                              15m: {pb.trend15m}
+                            </span>
+                            <span className="px-2.5 py-1 rounded-xl border border-slate-800 bg-slate-900/40 text-[10px] font-extrabold text-slate-300">
+                              3m: {pb.condition3m}
+                            </span>
+                          </div>
+                          {pb.notes && <p className="mt-2 text-xs text-slate-500 leading-relaxed">{pb.notes}</p>}
+                        </div>
+                      </button>
+
+                      {isAdmin && (
+                        <div className="px-5 pb-5">
+                          <button
+                            onClick={() => void deletePlaybook(pb)}
+                            className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-extrabold text-slate-200 transition-all"
+                            title="Delete"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddPlaybookModal && isAdmin && (
+        <div className="fixed inset-0 bg-[#020617]/90 backdrop-blur-xl flex items-center justify-center p-6 z-[110]">
+          <div className="glass-card rounded-[2rem] p-10 w-full max-w-3xl border-slate-800 shadow-2xl">
+            <div className="flex items-start justify-between gap-6 mb-8">
+              <div>
+                <h3 className="text-2xl font-extrabold">Add Playbook</h3>
+                <p className="text-slate-400 text-sm">Isi data dan upload gambar.</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAddPlaybookModal(false);
+                  setPlaybookError(null);
+                }}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="rounded-3xl border border-slate-800/60 bg-slate-950/30 p-6">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                <div className="md:col-span-4">
+                  <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Title</label>
+                  <input
+                    value={pbTitle}
+                    onChange={(e) => setPbTitle(e.target.value)}
+                    className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
+                    placeholder="contoh: OB + Liquidity Sweep"
+                  />
+                </div>
+                <div className="md:col-span-5">
+                  <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Notes</label>
+                  <input
+                    value={pbNotes}
+                    onChange={(e) => setPbNotes(e.target.value)}
+                    className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
+                    placeholder="rules singkat / checklist"
+                  />
+                </div>
+                <div className="md:col-span-3">
+                  <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">15 Menit</label>
+                  <select
+                    value={pbTrend15m}
+                    onChange={(e) => setPbTrend15m(e.target.value === 'Downtrend' ? 'Downtrend' : 'Uptrend')}
+                    className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
+                  >
+                    <option value="Uptrend">Uptrend</option>
+                    <option value="Downtrend">Downtrend</option>
+                  </select>
+                </div>
+                <div className="md:col-span-4">
+                  <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Kondisi 3 Menit</label>
+                  <select
+                    value={pbCondition3m}
+                    onChange={(e) => setPbCondition3m(e.target.value === 'Downtrend' ? 'Downtrend' : 'Uptrend')}
+                    className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all hover:bg-slate-900"
+                  >
+                    <option value="Uptrend">Uptrend</option>
+                    <option value="Downtrend">Downtrend</option>
+                  </select>
+                </div>
+                <div className="md:col-span-8">
+                  <label className="block text-sm font-semibold text-slate-300 ml-1 mb-2">Upload Gambar</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setPbFile(e.target.files?.[0] ?? null)}
+                    className="w-full text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-slate-900 file:text-slate-200 hover:file:bg-slate-800"
+                  />
+                </div>
+              </div>
+
+              {playbookError && (
+                <div className="mt-5 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  {playbookError}
+                </div>
+              )}
+
+              <div className="mt-6 flex items-center justify-between gap-4 flex-wrap">
+                <p className="text-[10px] text-slate-500">Upload ke bucket `playbooks` (public) dan simpan metadata ke table `playbooks`.</p>
+                <button
+                  onClick={async () => {
+                    await createPlaybook();
+                    if (!pbUploading) setShowAddPlaybookModal(false);
+                  }}
+                  disabled={pbUploading}
+                  className="px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold transition-all"
+                >
+                  {pbUploading ? 'Uploading…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activePlaybook && (
+        <div className="fixed inset-0 bg-[#020617]/95 backdrop-blur-xl flex items-center justify-center p-4 z-[120]">
+          <div className="w-full max-w-6xl h-[85vh] glass-card rounded-[2rem] border-slate-800 shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-800/60 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-white truncate">{activePlaybook.title}</p>
+                {activePlaybook.notes && <p className="text-xs text-slate-500 truncate">{activePlaybook.notes}</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPlaybookZoom((z) => Math.max(0.5, Number((z - 0.25).toFixed(2))))}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
+                >
+                  -
+                </button>
+                <button
+                  onClick={() => setPlaybookZoom(1)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
+                >
+                  Reset
+                </button>
+                <button
+                  onClick={() => setPlaybookZoom((z) => Math.min(4, Number((z + 0.25).toFixed(2))))}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
+                >
+                  +
+                </button>
+                <button
+                  onClick={closePlaybookViewer}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-sm font-semibold transition-all"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto custom-scrollbar bg-slate-950/30">
+              <div className="min-h-full flex items-center justify-center p-6">
+                <img
+                  src={getPlaybookImageUrl(activePlaybook.imagePath)}
+                  alt={activePlaybook.title}
+                  className="max-w-none rounded-2xl border border-slate-800/60 shadow-2xl"
+                  style={{ transform: `scale(${playbookZoom})`, transformOrigin: 'center center' }}
+                />
+              </div>
             </div>
           </div>
         </div>
