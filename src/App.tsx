@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   ChevronRight,
@@ -7,11 +7,13 @@ import {
   History,
   LayoutDashboard,
   Mail,
+  Menu,
   Percent,
   Settings,
   Target,
   TrendingDown,
   TrendingUp,
+  X,
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 
@@ -173,6 +175,8 @@ export default function App() {
   const [showAddPlaybookModal, setShowAddPlaybookModal] = useState(false);
   const [activePlaybook, setActivePlaybook] = useState<PlaybookItem | null>(null);
   const [playbookZoom, setPlaybookZoom] = useState(1);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const tradeLogRef = useRef<HTMLDivElement | null>(null);
   const [playbooks, setPlaybooks] = useState<PlaybookItem[]>([]);
   const [playbookBusy, setPlaybookBusy] = useState(false);
   const [playbookError, setPlaybookError] = useState<string | null>(null);
@@ -256,6 +260,7 @@ export default function App() {
     setAuthPhase('login');
     setPin('');
     setAuthError(null);
+    setMobileMenuOpen(false);
     setSessionId(null);
     setTradeHistory([]);
     setPhase('setup');
@@ -1024,7 +1029,7 @@ export default function App() {
     <div className="min-h-screen text-slate-50 selection:bg-blue-500/30">
       {/* Header Nav */}
       <div className="border-b border-slate-800/60 bg-slate-950/50 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
               <Coins className="w-5 h-5 text-white" />
@@ -1079,7 +1084,7 @@ export default function App() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2">
               <button
                 onClick={() => {
                   const uname = username.trim().toLowerCase();
@@ -1115,8 +1120,112 @@ export default function App() {
                 Logout
               </button>
             </div>
+
+            <div className="sm:hidden flex items-center gap-2">
+              <button
+                onClick={() => setMobileMenuOpen((v) => !v)}
+                className="w-11 h-11 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 transition-all flex items-center justify-center"
+                title="Menu"
+              >
+                {mobileMenuOpen ? <X className="w-5 h-5 text-slate-200" /> : <Menu className="w-5 h-5 text-slate-200" />}
+              </button>
+            </div>
           </div>
         </div>
+
+        {mobileMenuOpen && (
+          <div className="sm:hidden border-t border-slate-800/60 bg-slate-950/80 backdrop-blur-md">
+            <div className="max-w-7xl mx-auto px-4 py-4">
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => {
+                    setPage('challenge');
+                    setMobileMenuOpen(false);
+                    requestAnimationFrame(() => {
+                      tradeLogRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    });
+                  }}
+                  className="px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-sm font-semibold transition-all inline-flex items-center justify-center gap-2"
+                >
+                  <History className="w-4 h-4 text-slate-300" />
+                  Calendar
+                </button>
+
+                <button
+                  onClick={() => {
+                    setPage('challenge');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="px-4 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 border border-blue-500/40 text-sm font-semibold transition-all"
+                >
+                  Challenge
+                </button>
+
+                <button
+                  onClick={() => {
+                    setPage('calculator');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-sm font-semibold transition-all"
+                >
+                  Calculator
+                </button>
+
+                <button
+                  onClick={async () => {
+                    setPage('challenge');
+                    setPlaybookError(null);
+                    setShowPlaybookModal(true);
+                    setMobileMenuOpen(false);
+                    await loadPlaybooks();
+                  }}
+                  className="px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-sm font-semibold transition-all inline-flex items-center justify-center gap-2"
+                >
+                  <BookOpen className="w-4 h-4 text-slate-300" />
+                  Playbook
+                </button>
+
+                <button
+                  onClick={() => {
+                    const uname = username.trim().toLowerCase();
+                    if (uname) {
+                      const newSession = createChallengeSessionId(uname);
+                      localStorage.setItem(CHALLENGE_SESSION_KEY(uname), newSession);
+                      setSessionId(newSession);
+                    }
+                    setTradeHistory([]);
+                    setCurrentLevel(1);
+                    setCurrentBalance(setupData.initialBalance);
+                    setPhase('setup');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-sm font-semibold transition-all"
+                >
+                  Reset
+                </button>
+
+                <button
+                  onClick={() => {
+                    setReminderError(null);
+                    setShowReminderModal(true);
+                    setMobileMenuOpen(false);
+                  }}
+                  className="px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-sm font-semibold transition-all inline-flex items-center justify-center gap-2"
+                >
+                  <Mail className="w-4 h-4 text-slate-300" />
+                  Reminders
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  className="col-span-2 px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-sm font-semibold transition-all"
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <main className="max-w-7xl mx-auto px-6 py-10">
@@ -1369,7 +1478,7 @@ export default function App() {
               <p className="mt-5 text-[10px] text-slate-500">Based on recent Feb 2026 visual range analysis (non-news days).</p>
             </div>
 
-            <div className="glass-card rounded-3xl p-7 border-slate-800/50">
+            <div ref={tradeLogRef} className="glass-card rounded-3xl p-7 border-slate-800/50">
               <div className="flex items-center justify-between gap-4 mb-6">
                 <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Trade Log</h4>
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{tradeHistory.length} trades</span>
