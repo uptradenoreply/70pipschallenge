@@ -415,6 +415,14 @@ export default function App() {
 
       setTradeHistory(mapped);
       if (mapped.length > 0) {
+        const earliest = mapped[mapped.length - 1];
+        const latest = mapped[0];
+        setSetupData((prev) => ({
+          ...prev,
+          initialBalance: isFinite(earliest.startingBalance) ? earliest.startingBalance : prev.initialBalance,
+          targetPips: isFinite(latest.pips) ? latest.pips : prev.targetPips,
+          riskPercentage: isFinite(latest.riskPercentage) ? latest.riskPercentage : prev.riskPercentage,
+        }));
         setCurrentLevel(mapped[0].level + 1);
         setCurrentBalance(mapped[0].endingBalance);
         setPhase('active');
